@@ -1,0 +1,727 @@
+# Panduan Setup Awal Aplikasi Selepin (Frontend + Backend Terpisah)
+
+## Prerequisites (Yang Harus Diinstall Dulu)
+
+### 1. Install Node.js & npm
+```bash
+# Download dari https://nodejs.org (versi LTS)
+# Atau pakai nvm untuk Linux/Mac:
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install --lts
+nvm use --lts
+```
+
+### 2. Install Git
+```bash
+# Windows: Download dari https://git-scm.com
+# Mac: brew install git
+# Ubuntu: sudo apt install git
+```
+
+### 3. Install Database (PostgreSQL)
+```bash
+# Option 1: Install lokal
+# Windows: Download dari https://www.postgresql.org
+# Mac: brew install postgresql
+# Ubuntu: sudo apt install postgresql
+
+# Option 2: Pakai Docker (Recommended)
+docker pull postgres:15
+```
+
+### 4. Install Nest CLI Global
+```bash
+npm install -g @nestjs/cli
+```
+
+### 5. Install Code Editor
+- Visual Studio Code (Recommended)
+- Extension: Prisma, Tailwind CSS IntelliSense, ES7+ React snippets, Thunder Client
+
+## Langkah 1: Setup Project Structure
+
+### 1.1 Buat Folder Project Utama
+```bash
+mkdir selepin-app
+cd selepin-app
+```
+
+### 1.2 Struktur Project (Monorepo)
+```bash
+mkdir apps
+mkdir packages
+```
+
+Struktur akhir akan seperti ini:
+```
+selepin-app/
+├── apps/
+│   ├── web/          # Next.js Frontend
+│   └── api/          # NestJS Backend
+├── packages/
+│   └── shared/       # Shared types, utils
+└── docker-compose.yml
+```
+
+## Langkah 2: Setup Backend (NestJS)
+
+### 2.1 Create NestJS Project
+```bash
+cd apps
+nest new api
+cd api
+```
+
+### 2.2 Install Backend Dependencies
+```bash
+# Database & ORM
+npm install prisma @prisma/client
+npm install -D prisma
+
+# Authentication & Security
+npm install @nestjs/jwt @nestjs/passport passport passport-jwt
+npm install bcryptjs
+npm install -D @types/bcryptjs @types/passport-jwt
+
+# Validation
+npm install class-validator class-transformer
+
+# Config
+npm install @nestjs/config
+
+# CORS
+npm install @nestjs/platform-express
+
+# Testing
+npm install -D @nestjs/testing
+```
+
+### 2.3 Setup Prisma di Backend
+```bash
+# Initialize Prisma
+npx prisma init
+```
+
+### 2.4 Update Prisma Schema Backend
+Edit `apps/api/prisma/schema.prisma`:
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      Role     @default(PETANI)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookings  Booking[]
+  products  Product[]
+
+  @@map("users")
+}
+
+// Selep model
+model Selep {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  latitude    Float
+  longitude   Float
+  capacityKg  Int
+  pricePerKg  Float
+  isActive    Boolean  @default(true)
+  operatingHours String?
+  contactPhone String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  bookings Booking[]
+
+  @@map("seleps")
+}
+
+// Booking model
+model Booking {
+  id           String        @id @default(cuid())
+  gabahKg      Int
+  estimatedResult Float?
+  actualResult Float?
+  status       BookingStatus @default(PENDING)
+  bookingDate  DateTime
+  processDate  DateTime?
+  completedDate DateTime?
+  notes        String?
+  totalCost    Float?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  selepId String
+  selep   Selep  @relation(fields: [selepId], references: [id])
+
+  @@map("bookings")
+}
+
+// Product model
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  stock       Int
+  unit        String   // kg, ton, karung
+  imageUrl    String?
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("products")
+}
+
+// Review model
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations - bisa untuk selep atau product
+  selepId   String?
+  productId String?
+
+  @@map("reviews")
+}
+
+// Enums
+enum Role {
+  PETANI
+  SELEP
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+```
+
+### 2.5 Backend Environment Variables
+Buat file `apps/api/.env`:
+```env
+# Database
+DATABASE_URL="postgresql://selepin_user:selepin_pass@localhost:5432/selepin_db?schema=public"
+
+# JWT
+JWT_SECRET="your-jwt-secret-key-here"
+JWT_EXPIRES_IN="7d"
+
+# App Config
+PORT=3001
+NODE_ENV="development"
+
+# CORS
+FRONTEND_URL="http://localhost:3000"
+```
+
+### 2.6 Setup NestJS Modules
+
+#### 2.6.1 Generate Modules
+```bash
+# Generate modules
+nest generate module auth
+nest generate module users
+nest generate module selep
+nest generate module booking
+nest generate module products
+
+# Generate controllers
+nest generate controller auth
+nest generate controller users
+nest generate controller selep
+nest generate controller booking
+nest generate controller products
+
+# Generate services
+nest generate service auth
+nest generate service users
+nest generate service selep
+nest generate service booking
+nest generate service products
+```
+
+#### 2.6.2 Setup Prisma Service
+Buat file `apps/api/src/prisma/prisma.service.ts`:
+```typescript
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit {
+  async onModuleInit() {
+    await this.$connect();
+  }
+}
+```
+
+Buat file `apps/api/src/prisma/prisma.module.ts`:
+```typescript
+import { Module } from '@nestjs/common';
+import { PrismaService } from './prisma.service';
+
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+```
+
+#### 2.6.3 Update Main App Module
+Edit `apps/api/src/app.module.ts`:
+```typescript
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { SelepModule } from './selep/selep.module';
+import { BookingModule } from './booking/booking.module';
+import { ProductsModule } from './products/products.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    SelepModule,
+    BookingModule,
+    ProductsModule,
+  ],
+})
+export class AppModule {}
+```
+
+#### 2.6.4 Setup CORS di Main.ts
+Edit `apps/api/src/main.ts`:
+```typescript
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  
+  const configService = app.get(ConfigService);
+  
+  // Enable CORS
+  app.enableCors({
+    origin: configService.get('FRONTEND_URL') || 'http://localhost:3000',
+    credentials: true,
+  });
+  
+  // Global validation pipe
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }));
+  
+  // API prefix
+  app.setGlobalPrefix('api/v1');
+  
+  const port = configService.get('PORT') || 3001;
+  await app.listen(port);
+  
+  console.log(`🚀 Backend API running on http://localhost:${port}`);
+}
+bootstrap();
+```
+
+## Langkah 3: Setup Frontend (Next.js)
+
+### 3.1 Create Next.js Project
+```bash
+cd apps
+npx create-next-app@latest web --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
+cd web
+```
+
+### 3.2 Install Frontend Dependencies
+```bash
+# HTTP Client
+npm install axios
+
+# Authentication (client-side)
+npm install next-auth
+
+# UI Components & Utils
+npm install lucide-react clsx tailwind-merge
+
+# Forms & Validation
+npm install react-hook-form @hookform/resolvers zod
+
+# Maps (nanti)
+npm install @googlemaps/js-api-loader
+
+# Development tools
+npm install -D @types/node
+```
+
+### 3.3 Frontend Environment Variables
+Buat file `apps/web/.env.local`:
+```env
+# Backend API
+NEXT_PUBLIC_API_URL="http://localhost:3001/api/v1"
+
+# NextAuth
+NEXTAUTH_SECRET="your-nextauth-secret"
+NEXTAUTH_URL="http://localhost:3000"
+
+# Google Maps (nanti)
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="your-google-maps-api-key"
+
+# Development
+NODE_ENV="development"
+```
+
+### 3.4 Setup API Client
+Buat file `apps/web/src/lib/api.ts`:
+```typescript
+import axios from 'axios';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor untuk token
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response interceptor untuk error handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+## Langkah 4: Setup Database
+
+### 4.1 Setup PostgreSQL dengan Docker
+Buat file `selepin-app/docker-compose.yml`:
+```yaml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: selepin-db
+    environment:
+      POSTGRES_USER: selepin_user
+      POSTGRES_PASSWORD: selepin_pass
+      POSTGRES_DB: selepin_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - selepin-network
+
+volumes:
+  postgres_data:
+
+networks:
+  selepin-network:
+    driver: bridge
+```
+
+### 4.2 Run Database
+```bash
+cd selepin-app
+docker-compose up -d
+```
+
+### 4.3 Setup Database & Migration
+```bash
+cd apps/api
+
+# Generate Prisma client
+npx prisma generate
+
+# Create and run migration
+npx prisma migrate dev --name init
+
+# (Optional) Open Prisma Studio
+npx prisma studio
+```
+
+## Langkah 5: Setup Shared Types
+
+### 5.1 Create Shared Package
+```bash
+cd packages
+mkdir shared
+cd shared
+npm init -y
+```
+
+### 5.2 Install Dependencies
+```bash
+npm install -D typescript @types/node
+```
+
+### 5.3 Setup Shared Types
+Buat file `packages/shared/src/types/index.ts`:
+```typescript
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  role: 'PETANI' | 'SELEP' | 'ADMIN';
+  isActive: boolean;
+}
+
+export interface Selep {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  capacityKg: number;
+  pricePerKg: number;
+  isActive: boolean;
+  operatingHours?: string;
+  contactPhone?: string;
+}
+
+export interface BookingCreateDto {
+  selepId: string;
+  gabahKg: number;
+  bookingDate: string;
+  notes?: string;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+}
+```
+
+## Langkah 6: Test Setup
+
+### 6.1 Test Backend
+```bash
+cd apps/api
+npm run start:dev
+# Backend should run on http://localhost:3001
+```
+
+### 6.2 Test Frontend
+```bash
+cd apps/web
+npm run dev
+# Frontend should run on http://localhost:3000
+```
+
+### 6.3 Test Database Connection
+```bash
+cd apps/api
+npx prisma studio
+# Open http://localhost:5555
+```
+
+## Langkah 7: Basic API Endpoints (Quick Start)
+
+### 7.1 Simple Health Check
+Edit `apps/api/src/app.controller.ts`:
+```typescript
+import { Controller, Get } from '@nestjs/common';
+
+@Controller()
+export class AppController {
+  @Get('health')
+  healthCheck() {
+    return {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      service: 'Selepin API'
+    };
+  }
+}
+```
+
+### 7.2 Test API dari Frontend
+Buat file `apps/web/src/app/test-api/page.tsx`:
+```typescript
+'use client';
+
+import { useState } from 'react';
+import { apiClient } from '@/lib/api';
+
+export default function TestApiPage() {
+  const [result, setResult] = useState('');
+
+  const testApi = async () => {
+    try {
+      const response = await apiClient.get('/health');
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error}`);
+    }
+  };
+
+  return (
+    <div className="p-8">
+      <h1 className="text-2xl font-bold mb-4">Test API Connection</h1>
+      <button 
+        onClick={testApi}
+        className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
+      >
+        Test API
+      </button>
+      <pre className="bg-gray-100 p-4 rounded">
+        {result}
+      </pre>
+    </div>
+  );
+}
+```
+
+## Langkah 8: Setup Git & Version Control
+
+### 8.1 Initialize Git Repository
+```bash
+cd selepin-app
+git init
+git add .
+git commit -m "Initial setup: NestJS backend + Next.js frontend"
+```
+
+### 8.2 Setup .gitignore
+```gitignore
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production
+/build
+/.next/
+/out/
+/dist/
+
+# Environment variables
+.env
+.env*.local
+
+# Database
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+```
+
+## Scripts untuk Development
+
+### 8.3 Package.json Root (untuk menjalankan semua)
+Buat file `selepin-app/package.json`:
+```json
+{
+  "name": "selepin-app",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "cd apps/api && npm run start:dev",
+    "dev:web": "cd apps/web && npm run dev",
+    "db:up": "docker-compose up -d",
+    "db:down": "docker-compose down",
+    "db:reset": "cd apps/api && npx prisma migrate reset"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0"
+  }
+}
+```
+
+Install concurrently:
+```bash
+npm install
+```
+
+## Quick Start Command
+
+Setelah setup selesai, jalankan semua dengan:
+```bash
+# Start database
+npm run db:up
+
+# Start both frontend & backend
+npm run dev
+```
+
+## Next Steps
+
+1. **Implement Authentication** - JWT auth di backend, login form di frontend
+2. **Create Basic CRUD** - User, Selep, Booking endpoints
+3. **Setup Google Maps** - Integrasi peta untuk pencarian selep
+4. **Build UI Components** - Forms, tables, cards untuk setiap fitur
+5. **Add Validation** - DTO validation di backend, form validation di frontend
+
+Backend API akan jalan di `http://localhost:3001`
+Frontend akan jalan di `http://localhost:3000`
+Database accessible di `localhost:5432`

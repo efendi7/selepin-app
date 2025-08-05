@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      Role     @default(PETANI)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookings  Booking[]
+  products  Product[]
+
+  @@map("users")
+}
+
+// Selep model
+model Selep {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  latitude    Float
+  longitude   Float
+  capacityKg  Int
+  pricePerKg  Float
+  isActive    Boolean  @default(true)
+  operatingHours String?
+  contactPhone String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  bookings Booking[]
+
+  @@map("seleps")
+}
+
+// Booking model
+model Booking {
+  id           String        @id @default(cuid())
+  gabahKg      Int
+  estimatedResult Float?
+  actualResult Float?
+  status       BookingStatus @default(PENDING)
+  bookingDate  DateTime
+  processDate  DateTime?
+  completedDate DateTime?
+  notes        String?
+  totalCost    Float?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  selepId String
+  selep   Selep  @relation(fields: [selepId], references: [id])
+
+  @@map("bookings")
+}
+
+// Product model
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  stock       Int
+  unit        String   // kg, ton, karung
+  imageUrl    String?
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("products")
+}
+
+// Review model
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations - bisa untuk selep atau product
+  selepId   String?
+  productId String?
+
+  @@map("reviews")
+}
+
+// Enums
+enum Role {
+  PETANI
+  SELEP
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
